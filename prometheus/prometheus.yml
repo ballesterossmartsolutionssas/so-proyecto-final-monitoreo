@@ -1,0 +1,25 @@
+global:
+  scrape_interval: 5s       # cada 5 s pregunta las métricas a cada objetivo
+  evaluation_interval: 5s
+
+scrape_configs:
+  # Prometheus se monitorea a sí mismo.
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Las tres réplicas del backend (endpoint /metrics de prometheus_client).
+  - job_name: backend
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["backend1:5000", "backend2:5000", "backend3:5000"]
+
+  # Nginx, a través del exportador que traduce stub_status a métricas.
+  - job_name: nginx
+    static_configs:
+      - targets: ["nginx-exporter:9113"]
+
+  # Uso de recursos de cada contenedor (CPU, memoria, red, disco).
+  - job_name: cadvisor
+    static_configs:
+      - targets: ["cadvisor:8080"]

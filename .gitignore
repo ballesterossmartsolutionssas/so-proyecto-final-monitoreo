@@ -1,0 +1,5 @@
+.env
+__pycache__/
+*.pyc
+k6/resultado.json
+docs/*.docx

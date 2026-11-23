@@ -1,0 +1,118 @@
+# Proyecto final de Sistemas Operativos — UAO 2026-2
+# Nginx (proxy inverso + balanceo) -> 3 backends Flask, monitoreados con
+# Prometheus, nginx-prometheus-exporter, cAdvisor y Grafana.
+name: so-proyecto-final
+
+x-backend: &backend
+  build: ./backend
+  image: so-proyecto-final/backend:1.0
+  restart: unless-stopped
+  networks: [monitoreo]
+  deploy:
+    resources:
+      limits:
+        cpus: "1.0"
+        memory: 256M
+
+services:
+  backend1:
+    <<: *backend
+    container_name: so-backend1
+    environment:
+      INSTANCE_ID: "1"
+
+  backend2:
+    <<: *backend
+    container_name: so-backend2
+    environment:
+      INSTANCE_ID: "2"
+
+  backend3:
+    <<: *backend
+    container_name: so-backend3
+    environment:
+      INSTANCE_ID: "3"
+
+  nginx:
+    image: nginx:1.29-alpine
+    container_name: so-nginx
+    restart: unless-stopped
+    ports:
+      - "${NGINX_PORT:-8080}:80"          # única entrada pública a la aplicación
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      backend1: { condition: service_healthy }
+      backend2: { condition: service_healthy }
+      backend3: { condition: service_healthy }
+    networks: [monitoreo]
+
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:1.4.2
+    container_name: so-nginx-exporter
+    restart: unless-stopped
+    command:
+      - "--nginx.scrape-uri=http://nginx:8088/stub_status"
+    depends_on: [nginx]
+    networks: [monitoreo]                  # 9113 queda interno, solo lo lee Prometheus
+
+  cadvisor:
+    image: ghcr.io/google/cadvisor:0.56.2
+    container_name: so-cadvisor
+    restart: unless-stopped
+    privileged: true
+    command:
+      - "--housekeeping_interval=5s"
+      - "--docker_only=true"
+    ports:
+      - "${CADVISOR_PORT:-8081}:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks: [monitoreo]
+
+  prometheus:
+    image: prom/prometheus:v3.13.5
+    container_name: so-prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus        # persistencia de las series
+    depends_on: [nginx-exporter, cadvisor]
+    networks: [monitoreo]
+
+  grafana:
+    image: grafana/grafana:12.4.0
+    container_name: so-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"     # ver los dashboards sin iniciar sesión (solo lectura)
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/infraestructura.json
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana       # persistencia de usuarios y cambios
+    depends_on: [prometheus]
+    networks: [monitoreo]
+
+networks:
+  monitoreo:
+    name: so_monitoreo
+    driver: bridge
+
+volumes:
+  prometheus_data:
+  grafana_data:

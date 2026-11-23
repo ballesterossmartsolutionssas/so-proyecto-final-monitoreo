@@ -1,0 +1,9 @@
+
+===== Resumen de la prueba de carga =====
+Solicitudes totales : 21584
+Solicitudes/s       : 119.8
+Errores             : 0.00 %
+Latencia promedio   : 26.8 ms
+Latencia p90 / p95  : 61.1 / 74.3 ms
+Latencia máxima     : 263.8 ms
+Usuarios virtuales  : hasta 60
